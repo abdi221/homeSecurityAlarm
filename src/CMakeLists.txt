@@ -1,15 +1,15 @@
 add_executable(${NAME}  
         main.c
-        blink_queue.c
-        scheduling_priorities.c
-        mutex.c
-        semaphore.c
-        display_run.c
-        temp_display_queue.c
-        ../local-libs/ssd1306/ssd1306.c # SSD1306 OLED DISPLAY LOCAL LIBRARY
-        ../local-libs/am2320/am2320.c # AM2320 SENSOR LOCAL LIBRARY
-        ../local-libs/am2320/am2320_2.c # AM2320 SENSOR LOCAL LIBRARY
-        ../local-libs/helpers/string_operations.c # MY STRING HELPERS
+        # blink_queue.c
+        # scheduling_priorities.c
+        # mutex.c
+        # semaphore.c
+        # display_run.c
+        # temp_display_queue.c
+        # ../local-libs/ssd1306/ssd1306.c # SSD1306 OLED DISPLAY LOCAL LIBRARY
+        # ../local-libs/am2320/am2320.c # AM2320 SENSOR LOCAL LIBRARY
+        # ../local-libs/am2320/am2320_2.c # AM2320 SENSOR LOCAL LIBRARY
+        # ../local-libs/helpers/string_operations.c # MY STRING HELPERS
         )
 
 # pull in common dependencies
