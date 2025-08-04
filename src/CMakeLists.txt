@@ -1,5 +1,5 @@
 add_executable(${NAME}  
-        blink.c
+        main.c
         blink_queue.c
         scheduling_priorities.c
         mutex.c
