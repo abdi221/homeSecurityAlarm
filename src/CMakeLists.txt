@@ -1,27 +1,21 @@
 add_executable(${NAME}  
         main.c
-        # blink_queue.c
-        # scheduling_priorities.c
-        # mutex.c
-        # semaphore.c
-        # display_run.c
-        # temp_display_queue.c
-        # ../local-libs/ssd1306/ssd1306.c # SSD1306 OLED DISPLAY LOCAL LIBRARY
-        # ../local-libs/am2320/am2320.c # AM2320 SENSOR LOCAL LIBRARY
-        # ../local-libs/am2320/am2320_2.c # AM2320 SENSOR LOCAL LIBRARY
-        # ../local-libs/helpers/string_operations.c # MY STRING HELPERS
         )
 
 # pull in common dependencies
-target_link_libraries(${NAME} 
-        pico_stdlib                                 # for core functionality
-        pico_cyw43_arch_lwip_threadsafe_background  # we need Wifi
-        FreeRTOS-Kernel-Heap4                       # FreeRTOS kernel and dynamic heap
-        hardware_i2c                                # Hardware I2C
-        hardware_adc                                # Hardware ADC
-        LWIP_PORT                                   # LWIP config files
-        FREERTOS_PORT                               # FreeRTOS config files
-        )
+target_link_libraries(${NAME}
+    pico_stdlib
+    hardware_adc
+    hardware_pwm
+    FreeRTOS-Kernel-Heap4
+    pico_cyw43_arch_lwip_sys_freertos   # <- Wi-Fi+lwIP (FreeRTOS)
+    pico_cyw43_driver
+    pico_lwip_mqtt                      # <- brings lwip headers (dns.h, mqtt.h, ip_addr.h)
+    pico_rand
+    LWIP_PORT
+    FREERTOS_PORT
+)
+
 
         
 # Enable print functionality on usb & disable on uart
@@ -31,9 +25,10 @@ pico_enable_stdio_uart(${NAME}  0)
 # create map/bin/hex file etc.
 pico_add_extra_outputs(${NAME} )
 
-target_include_directories(${NAME}  
-        PRIVATE ${CMAKE_CURRENT_LIST_DIR}
-        PRIVATE ../local-libs/ssd1306 # SSD1306 OLED DISPLAY LOCAL LIBRARY
-        PRIVATE ../local-libs/am2320 # AM2320 SENSOR LOCAL LIBRARY
-        PRIVATE ../local-libs/helpers # ALL HELPER LOCAL LIBRARIES
+target_include_directories(${NAME} PRIVATE
+        ${PICO_SDK_PATH}/src/rp2_common/pico_cyw43_arch/include
+        ${PICO_SDK_PATH}/src/rp2_common/pico_lwip/include
+        ${PICO_SDK_PATH}/lib/lwip/src/include
+        ${PICO_SDK_PATH}/lib/cyw43-driver/src
+        ${PICO_SDK_PATH}/src/common/pico_rand/include
         )
