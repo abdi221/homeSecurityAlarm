@@ -5,6 +5,7 @@ add_executable(${NAME}
 # Minimal set to boot RTOS and print over USB
 target_link_libraries(${NAME}
     pico_stdlib
+    FreeRTOS-Kernel-Heap4
     FREERTOS_PORT                              # your template’s FreeRTOS kernel
     pico_cyw43_arch_lwip_threadsafe_background # simpler arch; fine even if Wi-Fi unused
     hardware_adc
