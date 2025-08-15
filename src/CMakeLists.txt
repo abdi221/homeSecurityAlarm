@@ -14,11 +14,11 @@ target_link_libraries(${NAME}
     LWIP_PORT
 )
 
-# (Optional) turn MQTT on later without breaking the minimal build
+
 option(ENABLE_MQTT "Build with lwIP MQTT" OFF)
 if(ENABLE_MQTT)
-    target_link_libraries(${NAME} pico_lwip_mqtt)
-    target_compile_definitions(${NAME} PRIVATE ENABLE_MQTT=1)
+  target_link_libraries(${NAME} pico_lwip_mqtt)
+  target_compile_definitions(${NAME} PRIVATE ENABLE_MQTT=1)
 endif()
 
 pico_enable_stdio_usb(${NAME} 1)
