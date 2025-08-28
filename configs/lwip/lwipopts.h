@@ -13,6 +13,9 @@
 #ifndef LWIP_SOCKET
 #define LWIP_SOCKET                 0
 #endif
+#ifndef MEMP_NUM_SYS_TIMEOUT         
+#define MEMP_NUM_SYS_TIMEOUT         24
+#endif
 #if PICO_CYW43_ARCH_POLL
 #define MEM_LIBC_MALLOC             1
 #else

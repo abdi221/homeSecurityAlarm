@@ -15,10 +15,12 @@
 #endif
 
 // -------- user config (no secrets here) --------
-#define WIFI_SSID    "YOUR_WIFI_SSID"
-#define WIFI_PASS    "YOUR_WIFI_PASSWORD"
-#define AIO_USERNAME "YOUR_ADAFRUIT_USERNAME"
-#define AIO_KEY      "YOUR_ADAFRUIT_AIO_KEY"
+// #define WIFI_SSID    "Tele2_60aebd"
+// #define WIFI_PASS    "rhyk34zc"
+#define WIFI_SSID    "Tele2_60aebd"
+#define WIFI_PASS    "rhyk34zc"
+#define AIO_USERNAME "iykyk_123"
+#define AIO_KEY      "aio_RvRc43b6oATYrQwMhjA5AHYcRx46"
 #define AIO_HOST     "io.adafruit.com"
 #define AIO_PORT     1883
 
@@ -26,10 +28,17 @@
 #define BUTTON_GPIO  0    // active-low with pull-up
 #define BUZZER_GPIO  16
 
-#define HALL_THRESHOLD_12B 3062     // ≈ 49000 >> 4
+#define HALL_THRESHOLD_12B 3062
 #define ARMING_DELAY_SEC   5
 #define BUZZER_FREQ_HZ     1500
 #define BUZZER_DUTY_16B    45000
+#define HALL_FILTER_ALPHA_NUM   1   // EMA alpha = 1/8 (tweakable)
+#define HALL_FILTER_ALPHA_DEN   8
+#define HALL_HYSTERESIS_DELTA   150 // ~150 ADC counts ≈ choose after you print values
+
+// If your sensor goes DOWN when magnet is NEAR, set this to 1
+#define HALL_INVERT_POLARITY    1
+
 
 // -------- topics --------
 static char FEED_ALARM_ON[64];
@@ -49,9 +58,24 @@ static void buzzer_init(uint gpio) {
 static inline void buzzer_on(void)  { pwm_set_chan_level(buzzer_slice, pwm_gpio_to_channel(BUZZER_GPIO), BUZZER_DUTY_16B); }
 static inline void buzzer_off(void) { pwm_set_chan_level(buzzer_slice, pwm_gpio_to_channel(BUZZER_GPIO), 0); }
 
+
+static inline bool hall_near(uint16_t v) {
+  return HALL_INVERT_POLARITY ? (v < HALL_THRESHOLD_12B) : (v > HALL_THRESHOLD_12B);
+}
+static inline bool hall_near_on(uint16_t v) {   // with hysteresis
+  return HALL_INVERT_POLARITY ? (v < (HALL_THRESHOLD_12B - HALL_HYSTERESIS_DELTA))
+                              : (v > (HALL_THRESHOLD_12B + HALL_HYSTERESIS_DELTA));
+}
+static inline bool hall_near_off(uint16_t v) {  // with hysteresis
+  return HALL_INVERT_POLARITY ? (v > (HALL_THRESHOLD_12B + HALL_HYSTERESIS_DELTA))
+                              : (v < (HALL_THRESHOLD_12B - HALL_HYSTERESIS_DELTA));
+}
 // -------- shared state --------
-static volatile bool g_armed = false;
-static volatile bool g_triggered = false;
+static volatile bool     g_armed = false;
+static volatile bool     g_triggered = false;
+static volatile uint16_t hall_raw = 0;
+static volatile uint16_t hall_ema = 0;
+static volatile bool     near_state = false;   // current hysteresis state
 
 // -------- publish queue --------
 typedef struct {
@@ -91,17 +115,22 @@ static void mqtt_pub_real(const char *topic, const char *msg) {
 // -------- tasks --------
 static void TaskLog(void *arg) {
   (void)arg;
-  for (;;) { printf("FreeRTOS is running\n"); vTaskDelay(pdMS_TO_TICKS(1000)); }
+  for (;;) {
+    printf("ADC raw=%u ema=%u thr=%u±%u armed=%d trig=%d near=%d\n",
+           hall_raw, hall_ema, HALL_THRESHOLD_12B, HALL_HYSTERESIS_DELTA,
+           g_armed, g_triggered, near_state);
+    vTaskDelay(pdMS_TO_TICKS(200));
+  }
 }
 
 static void TaskButton(void *arg) {
   (void)arg;
   const TickType_t dt = pdMS_TO_TICKS(10);
-  uint8_t stable = 1, cnt = 0;
+  uint8_t stable = 1, away_cnt = 0;
   for (;;) {
     bool pressed = (gpio_get(BUTTON_GPIO) == 0);
-    if (!pressed) { cnt = 0; stable = 1; }
-    else if (cnt < 3) { cnt++; if (cnt == 3) stable = 0; } // ~30ms debounce
+    if (!pressed) { away_cnt = 0; stable = 1; }
+    else if (away_cnt < 3) { away_cnt++; if (away_cnt == 3) stable = 0; } // ~30ms debounce
 
     if (!stable && pressed) {
       // disarm immediately
@@ -116,43 +145,72 @@ static void TaskButton(void *arg) {
       }
       // wait until button released
       while (gpio_get(BUTTON_GPIO) == 0) vTaskDelay(dt);
-      cnt = 0; stable = 1;
+      away_cnt = 0; stable = 1;
     }
     vTaskDelay(dt);
   }
 }
 
+static inline uint16_t ema_update(uint16_t prev, uint16_t sample) {
+  return (uint16_t)((prev * (HALL_FILTER_ALPHA_DEN - HALL_FILTER_ALPHA_NUM)
+                   + sample * HALL_FILTER_ALPHA_NUM) / HALL_FILTER_ALPHA_DEN);
+}
+
+
 static void TaskHall(void *arg) {
   (void)arg;
-  // arming delay
+
   printf("Arming in %d s:\n", ARMING_DELAY_SEC);
   for (int i = ARMING_DELAY_SEC; i >= 0; --i) { printf("%d ", i); vTaskDelay(pdMS_TO_TICKS(1000)); }
   printf("\n");
 
-  // Only arm if magnet initially “present” (your earlier logic)
-  adc_select_input(0);
+  adc_select_input(0);                 // GPIO26 = ADC0
   uint16_t initial = adc_read();
-  g_armed = (initial < HALL_THRESHOLD_12B);
-  printf("Initial hall=%u ⇒ %s\n", initial, g_armed ? "ARMED" : "DISARMED");
+  hall_raw = initial;
+  hall_ema = initial;                  // bootstrap filter
+
+  // Only arm if magnet is initially present
+  g_armed = hall_near(initial);
+  near_state = hall_near(initial);     // <-- was missing ; in your code
+  printf("Initial hall=%u (ema=%u) ⇒ %s\n",
+         initial, hall_ema, g_armed ? "ARMED" : "DISARMED");
 
   TickType_t last = xTaskGetTickCount();
-  for (;;) {
-    vTaskDelayUntil(&last, pdMS_TO_TICKS(1));  // 1 kHz sampling
-    adc_select_input(0);
-    uint16_t v = adc_read();
-    bool magnet_near = (v > HALL_THRESHOLD_12B);
+  uint8_t away_cnt = 0;                // <-- declare debounce counter here
 
-    if (g_armed && magnet_near && !g_triggered) {
-      g_triggered = true;
-      buzzer_on();
-      if (g_qNet) {
-        NetMsg m; snprintf(m.topic, sizeof m.topic, "%s/feeds/Alarm_ON", AIO_USERNAME);
-        snprintf(m.payload, sizeof m.payload, "Alarm Triggered: val=%u", v);
-        xQueueSend(g_qNet, &m, 0);
+  for (;;) {
+    vTaskDelayUntil(&last, pdMS_TO_TICKS(1));  // 1 kHz
+
+    adc_select_input(0);
+    uint16_t raw = adc_read();
+    hall_raw = raw;                    // share with logger
+    hall_ema = ema_update(hall_ema, raw);
+
+    // hysteresis update
+    if (!near_state && hall_near_on(raw))  near_state = true;
+    if ( near_state && hall_near_off(raw)) near_state = false;
+
+    // trigger when magnet LEAVES (near -> far) and stays away ~50 ms
+    if (g_armed && !g_triggered) {
+      if (!near_state) {
+        if (away_cnt < 50) away_cnt++;         // ~50 ms at 1 kHz
+        if (away_cnt >= 50) {
+          g_triggered = true;
+          buzzer_on();
+          if (g_qNet) {
+            NetMsg m;
+            snprintf(m.topic, sizeof m.topic, "%s/feeds/Alarm_ON", AIO_USERNAME);
+            snprintf(m.payload, sizeof m.payload, "ALARM: raw=%u ema=%u", raw, hall_ema);
+            xQueueSend(g_qNet, &m, 0);
+          }
+          printf("ALARM TRIGGERED (raw=%u ema=%u)\n", raw, hall_ema);
+        }
+      } else {
+        away_cnt = 0; // magnet returned -> cancel pending trigger
       }
-      printf("ALARM TRIGGERED (val=%u)\n", v);
     }
-    if (!magnet_near && !g_armed) buzzer_off(); // stay silent when disarmed
+
+    if (!g_armed) buzzer_off();
   }
 }
 
@@ -217,5 +275,7 @@ int main(void) {
   xTaskCreate(TaskNet,   "net",   2048, NULL, 1, NULL);   // low prio
 
   vTaskStartScheduler();
-  while (1) {}
+  while (1) {
+
+  }
 }

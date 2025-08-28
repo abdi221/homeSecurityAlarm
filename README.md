@@ -42,8 +42,15 @@ minicom -o -D /dev/ttyACM0 -b 115200   # exit: Ctrl+A, X, Y
 # or: screen /dev/ttyACM0 115200
 ```
 
-You should see a heartbeat like: `FreeRTOS is running`.
-
+To exit minicom
+```bash
+Ctrl + A (release) then X
+```
+To kill minicom
+```bash
+pgrep minicom # or killall minicom 
+kill <PID>
+```
 ---
 
 ## Enable real MQTT
