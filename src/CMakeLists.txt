@@ -1,5 +1,6 @@
 add_executable(${NAME}
     main.c
+    #hall_probe.c
 )
 
 # Minimal set to boot RTOS and print over USB
